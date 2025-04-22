@@ -22,11 +22,16 @@ export const register = async (username: string, email: string, password: string
 
 export const login = async (username: string, password: string) => {
     try {
-        const formData = new FormData();
-        formData.append('username', username);
-        formData.append('password', password);
+        const response = await axios.post(
+            `${API_URL}/login`,
+            `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
         
-        const response = await axios.post(`${API_URL}/login`, formData);
         if (response.data.access_token) {
             localStorage.setItem('token', response.data.access_token);
         }

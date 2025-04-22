@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../services/authService';
+import { useTheme } from '../context/ThemeContext';
 
 interface LoginProps {
     setIsAuthenticated: (value: boolean) => void;
@@ -10,6 +11,8 @@ const Login: React.FC<LoginProps> = ({ setIsAuthenticated }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const { theme } = useTheme();
     const navigate = useNavigate();
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -24,12 +27,25 @@ const Login: React.FC<LoginProps> = ({ setIsAuthenticated }) => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md w-full space-y-8">
-                <div>
-                    <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                        Sign in to your account
-                    </h2>
+        <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${
+            theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
+        }`}>
+            <div className={`w-full max-w-md p-8 space-y-8 rounded-lg shadow-lg ${
+                theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+            }`}>
+                <div className="text-center">
+                    <h2 className="text-3xl font-bold">Sign in to your account</h2>
+                    <p className="mt-2 text-sm text-gray-500">
+                        Don't have an account?{' '}
+                        <button
+                            onClick={() => navigate('/register')}
+                            className={`font-medium ${
+                                theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-500'
+                            }`}
+                        >
+                            Sign up
+                        </button>
+                    </p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                     {error && (

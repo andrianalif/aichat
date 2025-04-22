@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { getChatHistory, sendMessage } from '../services/chatService';
 import { useNavigate } from 'react-router-dom';
+import { debounce } from 'lodash';
 
 interface ChatResponse {
     id: number;
@@ -10,11 +11,15 @@ interface ChatResponse {
     created_at: string;
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000;
+
 const Chat: React.FC = () => {
     const [message, setMessage] = useState('');
     const [chats, setChats] = useState<ChatResponse[]>([]);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(true);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const { theme, toggleTheme } = useTheme();
     const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -28,42 +33,58 @@ const Chat: React.FC = () => {
         }
     };
 
-    const fetchChats = async () => {
+    const fetchChatsWithRetry = async (retryCount = 0) => {
         try {
             const data = await getChatHistory();
             setChats(data);
             setError('');
+            setIsLoadingHistory(false);
         } catch (error) {
-            if (error instanceof Error) {
-                setError(error.message);
+            if (retryCount < MAX_RETRIES) {
+                setTimeout(() => {
+                    fetchChatsWithRetry(retryCount + 1);
+                }, RETRY_DELAY * Math.pow(2, retryCount));
             } else {
-                setError('An unexpected error occurred');
+                if (error instanceof Error) {
+                    setError(error.message);
+                } else {
+                    setError('Failed to load chat history');
+                }
+                setIsLoadingHistory(false);
             }
         }
     };
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const debouncedSendMessage = useCallback(
+        debounce(async (messageText: string) => {
+            try {
+                const newChat = await sendMessage(messageText);
+                if (newChat && newChat.id) {
+                    setChats(prevChats => [...prevChats, newChat]);
+                    setMessage('');
+                } else {
+                    throw new Error('Invalid chat response received');
+                }
+            } catch (error) {
+                if (error instanceof Error) {
+                    setError(error.message);
+                } else {
+                    setError('An unexpected error occurred');
+                }
+            } finally {
+                setIsLoading(false);
+            }
+        }, 300),
+        []
+    );
+
     const handleSendMessage = async () => {
-        if (!message.trim()) return;
+        if (!message.trim() || isLoading) return;
 
         setIsLoading(true);
         setError('');
-        try {
-            const newChat = await sendMessage(message);
-            if (newChat && newChat.id) {
-                setChats(prevChats => [...prevChats, newChat]);
-                setMessage('');
-            } else {
-                throw new Error('Invalid chat response received');
-            }
-        } catch (error) {
-            if (error instanceof Error) {
-                setError(error.message);
-            } else {
-                setError('An unexpected error occurred');
-            }
-        } finally {
-            setIsLoading(false);
-        }
+        debouncedSendMessage(message);
     };
 
     useEffect(() => {
@@ -72,7 +93,7 @@ const Chat: React.FC = () => {
             navigate('/login');
             return;
         }
-        fetchChats();
+        fetchChatsWithRetry();
     }, [navigate]);
 
     useEffect(() => {
@@ -146,29 +167,44 @@ const Chat: React.FC = () => {
                         ref={chatContainerRef}
                         className="h-[calc(100vh-200px)] overflow-y-auto p-4"
                     >
-                        {error && (
+                        {isLoadingHistory ? (
+                            <div className={`flex justify-center items-center h-full ${
+                                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                            }`}>
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-current"></div>
+                            </div>
+                        ) : error ? (
                             <div className={`text-center p-2 mb-4 rounded ${
                                 theme === 'dark' ? 'bg-red-900 text-red-200' : 'bg-red-100 text-red-700'
                             }`}>
                                 {error}
+                                <button
+                                    onClick={() => fetchChatsWithRetry()}
+                                    className={`ml-2 underline ${
+                                        theme === 'dark' ? 'text-red-300' : 'text-red-800'
+                                    }`}
+                                >
+                                    Retry
+                                </button>
                             </div>
+                        ) : (
+                            chats.map((chat, index) => (
+                                <div key={`chat-${chat.id || index}`} className="space-y-2 mb-4">
+                                    <div className={`p-3 rounded-lg ${
+                                        theme === 'dark' ? 'bg-gray-700' : 'bg-blue-100'
+                                    }`}>
+                                        <p className="font-semibold">You:</p>
+                                        <p>{chat.message}</p>
+                                    </div>
+                                    <div className={`p-3 rounded-lg ${
+                                        theme === 'dark' ? 'bg-gray-600' : 'bg-gray-100'
+                                    }`}>
+                                        <p className="font-semibold">AI:</p>
+                                        <p>{chat.response}</p>
+                                    </div>
+                                </div>
+                            ))
                         )}
-                        {chats.map((chat, index) => (
-                            <div key={`chat-${chat.id || index}`} className="space-y-2">
-                                <div key={`user-${chat.id || index}`} className={`p-3 rounded-lg ${
-                                    theme === 'dark' ? 'bg-gray-700' : 'bg-blue-100'
-                                }`}>
-                                    <p className="font-semibold">You:</p>
-                                    <p>{chat.message}</p>
-                                </div>
-                                <div key={`ai-${chat.id || index}`} className={`p-3 rounded-lg ${
-                                    theme === 'dark' ? 'bg-gray-600' : 'bg-gray-100'
-                                }`}>
-                                    <p className="font-semibold">AI:</p>
-                                    <p>{chat.response}</p>
-                                </div>
-                            </div>
-                        ))}
                     </div>
 
                     <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="p-4 border-t border-gray-200">
@@ -177,7 +213,7 @@ const Chat: React.FC = () => {
                                 type="text"
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
                                 className={`flex-1 px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                                     theme === 'dark' 
                                         ? 'bg-gray-700 border-gray-600 text-white' 
@@ -197,7 +233,12 @@ const Chat: React.FC = () => {
                                             : 'bg-blue-500 hover:bg-blue-600'
                                 }`}
                             >
-                                {isLoading ? 'Sending...' : 'Send'}
+                                {isLoading ? (
+                                    <div className="flex items-center">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                        Sending...
+                                    </div>
+                                ) : 'Send'}
                             </button>
                         </div>
                     </form>

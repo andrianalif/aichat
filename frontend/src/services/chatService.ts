@@ -27,16 +27,19 @@ const getAuthHeader = () => {
 export const getChatHistory = async (): Promise<ChatResponse[]> => {
     try {
         const response = await axios.get(
-            `${API_URL}/chats`,
+            `${API_URL}/chat/chats`,
             {
                 headers: getAuthHeader()
             }
         );
         return response.data;
     } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+            throw new Error(error.response?.data?.detail || 'Failed to fetch chat history');
         }
         throw error;
     }
@@ -45,7 +48,7 @@ export const getChatHistory = async (): Promise<ChatResponse[]> => {
 export const sendMessage = async (message: string): Promise<ChatResponse> => {
     try {
         const response = await axios.post(
-            `${API_URL}/chat`,
+            `${API_URL}/chat/chat`,
             { message },
             {
                 headers: getAuthHeader()
@@ -53,9 +56,12 @@ export const sendMessage = async (message: string): Promise<ChatResponse> => {
         );
         return response.data;
     } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+        if (axios.isAxiosError(error)) {
+            if (error.response?.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+            throw new Error(error.response?.data?.detail || 'Failed to send message');
         }
         throw error;
     }

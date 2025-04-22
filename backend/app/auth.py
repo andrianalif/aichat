@@ -16,15 +16,15 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 router = APIRouter()
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return hash_password(plain_password) == hashed_password
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -87,15 +87,12 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
             detail="Username or email already registered"
         )
     
-    # Hash password
-    hashed_password = hashlib.sha256(user.password.encode()).hexdigest()
-    
     # Buat user baru
     new_user = models.User(
         username=user.username,
-        email=user.email,
-        password=hashed_password
+        email=user.email
     )
+    new_user.set_password(user.password)
     
     db.add(new_user)
     db.commit()
@@ -107,7 +104,6 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     # Cari user berdasarkan username
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -115,9 +111,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Verifikasi password
-    hashed_password = hashlib.sha256(form_data.password.encode()).hexdigest()
-    if user.password != hashed_password:
+    # Verifikasi password menggunakan method dari model User
+    if not user.verify_password(form_data.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -130,4 +125,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     
-    return {"access_token": access_token, "token_type": "bearer"} 
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "username": user.username,
+            "email": user.email
+        }
+    } 
